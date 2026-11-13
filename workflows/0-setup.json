@@ -1,0 +1,117 @@
+{
+  "name": "Retry Effects · 0 Setup",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Retry Effects · Setup\nRun this once: open it and press **Execute workflow**. It creates the data table `retry_ledger` that **Guarded call** keeps its rows in. Running it again changes nothing.\n\nThe webhook does the same for scripted installs (`POST retryfx/setup`). You can delete it.",
+        "width": 560,
+        "height": 180,
+        "color": 4
+      },
+      "id": "48187e51-2f94-4dcd-82c2-ae4c8f1acced",
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -240
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "6200aab9-f706-4be0-819d-6138401ee897",
+      "name": "Run once",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "retryfx/setup",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "bf4d76d6-dcff-477f-82d3-fd1f6ca766e8",
+      "name": "Or call",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        180
+      ],
+      "webhookId": "9b8e3433-e7cd-4a43-85ee-848cd3213bf6"
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "retry_ledger",
+        "columns": {
+          "column": [
+            {
+              "name": "key",
+              "type": "string"
+            },
+            {
+              "name": "status",
+              "type": "string"
+            },
+            {
+              "name": "attempts",
+              "type": "number"
+            },
+            {
+              "name": "claimed_by",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      },
+      "id": "0ac1d832-1c00-4b48-89f0-dc3bd7bc72e1",
+      "name": "Create ledger table",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Run once": {
+      "main": [
+        [
+          {
+            "node": "Create ledger table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Or call": {
+      "main": [
+        [
+          {
+            "node": "Create ledger table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "retryFxSetup0001"
+}

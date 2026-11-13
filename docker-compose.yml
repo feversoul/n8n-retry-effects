@@ -1,0 +1,36 @@
+# n8n with the workflows already imported and a small stand-in for the
+# service being called, to run the measurements locally.
+#   cp .env.example .env   (fill it in)   then   docker compose up -d
+# Already have n8n (Cloud or your own)? You do not need this file: see
+# "Add it to your n8n" in the README.
+
+services:
+  n8n:
+    image: ${N8N_IMAGE:-n8nio/n8n:2.47.7}
+    restart: unless-stopped
+    entrypoint: ["sh", "/bootstrap/bootstrap.sh"]
+    environment:
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?set N8N_ENCRYPTION_KEY in .env}
+      # Where "Call the service" and the lab post. Empty: the stand-in below.
+      SERVICE_URL: ${SERVICE_URL:-}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/bootstrap/workflows:ro
+      - ./docker/bootstrap.sh:/bootstrap/bootstrap.sh:ro
+      - ./docker/prepare.mjs:/bootstrap/prepare.mjs:ro
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+
+  # Stand-in for the service. It counts what it received:
+  #   GET /log?run=<run>
+  standin:
+    image: node:22-alpine
+    restart: unless-stopped
+    command: ["node", "/app/standin.mjs"]
+    volumes:
+      - ./docker/standin.mjs:/app/standin.mjs:ro
+    ports:
+      - "${STANDIN_PORT:-8080}:8080"
+
+volumes:
+  n8n_data:

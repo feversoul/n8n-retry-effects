@@ -1,0 +1,15 @@
+{
+  "name": "n8n-retry-effects",
+  "version": "1.0.0",
+  "private": true,
+  "description": "What a retry of a failed n8n execution sends again, counted at the receiving side, and a guarded call that stays at one",
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:e2e:queue": "node scripts/e2e.mjs queue"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

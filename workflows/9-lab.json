@@ -1,0 +1,1130 @@
+{
+  "name": "Retry Effects · 9 Lab",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Retry Effects · Lab\nFor measuring, not for production. Each row is one way to make the same call for N items. `POST retryfx/lab/<case>` with `{ \"run\": \"...\", \"items\": 5 }`; the stand-in service is told beforehand which item to fail and how. The tests retry the failed execution and count what the stand-in received.\n\n- `plain`: One HTTP Request node gets all items.\n- `retry-on-fail`: Same, with Retry On Fail on the node (3 tries).\n- `loop`: Loop Over Items, batch size 1, the call inside the loop.\n- `sub`: The call sits in a sub-workflow, behind a step that completes.\n- `check-first`: A ledger check and claim in front of the call, in the same workflow.\n- `guarded`: Each item goes through Guarded call.\n- `guarded-retry-on-fail`: Same, with Retry On Fail on the Execute Sub-workflow node.",
+        "width": 760,
+        "height": 300,
+        "color": 4
+      },
+      "id": "00770fab-0ae2-4098-85af-318e1138b78e",
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "retryfx/lab/plain",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "9fc4b96f-d82d-474c-8fac-dfff898462f6",
+      "name": "plain · Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "227e8361-71ea-4537-8d57-c8f705f214cd"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://standin:8080/mark",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Execution-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ run: $json.body.run }) }}",
+        "options": {}
+      },
+      "id": "ea907d0e-98ba-4bff-8885-1d26a20778e9",
+      "name": "plain · Before",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('plain · Webhook').first().json.body ?? {};\n// The key is the same on every attempt: it comes from the data, not from the execution.\nreturn Array.from({ length: Number(body.items ?? 1) }, (_, index) => ({\n  json: { key: `${body.run}:${index + 1}`, on_unknown: body.on_unknown ?? 'hold' },\n}));"
+      },
+      "id": "37910f44-0b09-4db8-812e-dc30c28fc7a2",
+      "name": "plain · Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://standin:8080/charge",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.key }}"
+            },
+            {
+              "name": "X-Execution-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ key: $json.key }) }}",
+        "options": {
+          "timeout": 1500
+        }
+      },
+      "id": "191cacb9-a846-457c-896d-fab3951e7d99",
+      "name": "plain · Send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "retryfx/lab/retry-on-fail",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "b315d993-9fc4-4c7c-8f79-e533742c25fb",
+      "name": "retry-on-fail · Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        220
+      ],
+      "webhookId": "fe99d815-fa50-4c28-8ca6-e1de9e9f6172"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://standin:8080/mark",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Execution-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ run: $json.body.run }) }}",
+        "options": {}
+      },
+      "id": "3c166515-9035-4890-8d9b-e8413422ca4f",
+      "name": "retry-on-fail · Before",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        220
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('retry-on-fail · Webhook').first().json.body ?? {};\n// The key is the same on every attempt: it comes from the data, not from the execution.\nreturn Array.from({ length: Number(body.items ?? 1) }, (_, index) => ({\n  json: { key: `${body.run}:${index + 1}`, on_unknown: body.on_unknown ?? 'hold' },\n}));"
+      },
+      "id": "792b015c-d1c8-4adb-8214-b3f9df038cdc",
+      "name": "retry-on-fail · Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://standin:8080/charge",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.key }}"
+            },
+            {
+              "name": "X-Execution-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ key: $json.key }) }}",
+        "options": {
+          "timeout": 1500
+        }
+      },
+      "id": "4819081b-6efb-4775-8598-b0b707217623",
+      "name": "retry-on-fail · Send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 200
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "retryfx/lab/loop",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "5ee32956-f6d0-4925-8b93-5b749a63c530",
+      "name": "loop · Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        440
+      ],
+      "webhookId": "69703a87-7fa3-4023-8c41-5aefd65bed90"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://standin:8080/mark",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Execution-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ run: $json.body.run }) }}",
+        "options": {}
+      },
+      "id": "2109c3bd-97c5-401c-8bcb-1ba0a25cc185",
+      "name": "loop · Before",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        440
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('loop · Webhook').first().json.body ?? {};\n// The key is the same on every attempt: it comes from the data, not from the execution.\nreturn Array.from({ length: Number(body.items ?? 1) }, (_, index) => ({\n  json: { key: `${body.run}:${index + 1}`, on_unknown: body.on_unknown ?? 'hold' },\n}));"
+      },
+      "id": "f78f58dd-8305-4510-86d1-0a5343212f4d",
+      "name": "loop · Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "517b28a0-3f15-4a04-84ef-321f843385a4",
+      "name": "loop · Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        660,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://standin:8080/charge",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.key }}"
+            },
+            {
+              "name": "X-Execution-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ key: $json.key }) }}",
+        "options": {
+          "timeout": 1500
+        }
+      },
+      "id": "08bd0705-b79b-4ecb-8cf8-74e82c1f1f4e",
+      "name": "loop · Send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "retryfx/lab/sub",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "fa9e71a3-1f3c-497a-89dc-64f60ecef88e",
+      "name": "sub · Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        660
+      ],
+      "webhookId": "4629adfb-a6cc-4071-844f-5bf8625652db"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('sub · Webhook').first().json.body ?? {};\n// The key is the same on every attempt: it comes from the data, not from the execution.\nreturn Array.from({ length: Number(body.items ?? 1) }, (_, index) => ({\n  json: { key: `${body.run}:${index + 1}`, on_unknown: body.on_unknown ?? 'hold' },\n}));"
+      },
+      "id": "588e00c2-42a0-49a0-8337-62d5bbbfc9f1",
+      "name": "sub · Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "retryFxLabChild1"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "once",
+        "options": {}
+      },
+      "id": "ff554165-7d31-4a5f-83d8-e225cb942ad0",
+      "name": "sub · Child",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        440,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "retryfx/lab/check-first",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "266d776e-fdc6-4c96-87bb-11881355fa2d",
+      "name": "check-first · Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        880
+      ],
+      "webhookId": "a5be180f-894c-438c-84b2-e5a4c52309d7"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://standin:8080/mark",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Execution-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ run: $json.body.run }) }}",
+        "options": {}
+      },
+      "id": "eaa7d84b-28b2-4a29-8374-9618361ce253",
+      "name": "check-first · Before",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        880
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('check-first · Webhook').first().json.body ?? {};\n// The key is the same on every attempt: it comes from the data, not from the execution.\nreturn Array.from({ length: Number(body.items ?? 1) }, (_, index) => ({\n  json: { key: `${body.run}:${index + 1}`, on_unknown: body.on_unknown ?? 'hold' },\n}));"
+      },
+      "id": "6d1a8a1f-163e-47b6-86a2-4da8bd3b528d",
+      "name": "check-first · Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "retry_ledger"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "key",
+              "condition": "eq",
+              "keyValue": "={{ $json.key }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "d2be8884-e886-47f8-8a71-b7bbfa964c4a",
+      "name": "check-first · Ledger rows",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        880
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const seen = new Set($input.all().map((item) => item.json.key));\nreturn $('check-first · Items').all().filter((item) => !seen.has(item.json.key));"
+      },
+      "id": "55c916a0-b025-4364-8ef4-2a7aac094c14",
+      "name": "check-first · Not seen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "retry_ledger"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "key": "={{ $json.key }}",
+            "status": "sending",
+            "attempts": 1,
+            "claimed_by": "={{ $execution.id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "key",
+              "displayName": "key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "attempts",
+              "displayName": "attempts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "claimed_by",
+              "displayName": "claimed_by",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "e0f87da8-53cc-4e55-88d1-8725e319ea64",
+      "name": "check-first · Claim",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://standin:8080/charge",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.key }}"
+            },
+            {
+              "name": "X-Execution-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ key: $json.key }) }}",
+        "options": {
+          "timeout": 1500
+        }
+      },
+      "id": "b8024c28-5044-40c4-8a57-ddda1a9354bc",
+      "name": "check-first · Send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "retryfx/lab/guarded",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "e0082aff-a21d-4804-85b9-9a8cb7ff3477",
+      "name": "guarded · Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1100
+      ],
+      "webhookId": "8c2f1765-50af-4749-8506-b4eb41e491e9"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('guarded · Webhook').first().json.body ?? {};\n// The key is the same on every attempt: it comes from the data, not from the execution.\nreturn Array.from({ length: Number(body.items ?? 1) }, (_, index) => ({\n  json: { key: `${body.run}:${index + 1}`, on_unknown: body.on_unknown ?? 'hold' },\n}));"
+      },
+      "id": "6237cb3e-f02f-4d42-8331-a35a88a93248",
+      "name": "guarded · Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "retryFxGuard0001"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {}
+      },
+      "id": "09d3dfb3-8548-44a6-8a4b-bd3946940a93",
+      "name": "guarded · Guarded call",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        440,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b1c8dedb-5716-46af-8b3a-ccddecc8c122",
+              "leftValue": "={{ $json.outcome === 'held' || $json.outcome === 'busy' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "cdc32e69-f364-49a1-8320-bc13c5120d98",
+      "name": "guarded · Held?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "Some items are held: the first attempt may have reached the service. Check them, then set their ledger rows to done or delete them."
+      },
+      "id": "89b5e4f4-0ca5-4484-8a66-17492bea0a04",
+      "name": "guarded · Needs review",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        880,
+        1040
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "07682d65-8a3b-42b9-8a9e-5cde5098a3b7",
+      "name": "guarded · Finished",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        880,
+        1180
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "retryfx/lab/guarded-retry-on-fail",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "ecc42926-18ae-4dae-87dc-12163cc3b6d7",
+      "name": "guarded-retry-on-fail · Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1320
+      ],
+      "webhookId": "e230c29f-256f-4ff2-8b2c-0146e7f0465e"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('guarded-retry-on-fail · Webhook').first().json.body ?? {};\n// The key is the same on every attempt: it comes from the data, not from the execution.\nreturn Array.from({ length: Number(body.items ?? 1) }, (_, index) => ({\n  json: { key: `${body.run}:${index + 1}`, on_unknown: body.on_unknown ?? 'hold' },\n}));"
+      },
+      "id": "5513384e-aff3-404d-8578-311c6fedbaba",
+      "name": "guarded-retry-on-fail · Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        1320
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "retryFxGuard0001"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {}
+      },
+      "id": "685ef251-63dd-4f8e-87c1-16f69a193af5",
+      "name": "guarded-retry-on-fail · Guarded call",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        440,
+        1320
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 200
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a005bfb5-cd36-46ef-8ad9-68e544698896",
+              "leftValue": "={{ $json.outcome === 'held' || $json.outcome === 'busy' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "c867d396-059a-4510-87f4-841781360dbc",
+      "name": "guarded-retry-on-fail · Held?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        1320
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "Some items are held: the first attempt may have reached the service. Check them, then set their ledger rows to done or delete them."
+      },
+      "id": "a98e946e-1778-4b83-874a-b8bf1c61bd1f",
+      "name": "guarded-retry-on-fail · Needs review",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        880,
+        1260
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "09a467a4-7554-4ad6-855f-b4007f7aa1d2",
+      "name": "guarded-retry-on-fail · Finished",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        880,
+        1400
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "plain · Webhook": {
+      "main": [
+        [
+          {
+            "node": "plain · Before",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "plain · Before": {
+      "main": [
+        [
+          {
+            "node": "plain · Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "plain · Items": {
+      "main": [
+        [
+          {
+            "node": "plain · Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "retry-on-fail · Webhook": {
+      "main": [
+        [
+          {
+            "node": "retry-on-fail · Before",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "retry-on-fail · Before": {
+      "main": [
+        [
+          {
+            "node": "retry-on-fail · Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "retry-on-fail · Items": {
+      "main": [
+        [
+          {
+            "node": "retry-on-fail · Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "loop · Webhook": {
+      "main": [
+        [
+          {
+            "node": "loop · Before",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "loop · Before": {
+      "main": [
+        [
+          {
+            "node": "loop · Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "loop · Items": {
+      "main": [
+        [
+          {
+            "node": "loop · Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "loop · Loop": {
+      "main": [
+        [],
+        [
+          {
+            "node": "loop · Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "loop · Send": {
+      "main": [
+        [
+          {
+            "node": "loop · Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "sub · Webhook": {
+      "main": [
+        [
+          {
+            "node": "sub · Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "sub · Items": {
+      "main": [
+        [
+          {
+            "node": "sub · Child",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check-first · Webhook": {
+      "main": [
+        [
+          {
+            "node": "check-first · Before",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check-first · Before": {
+      "main": [
+        [
+          {
+            "node": "check-first · Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check-first · Items": {
+      "main": [
+        [
+          {
+            "node": "check-first · Ledger rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check-first · Ledger rows": {
+      "main": [
+        [
+          {
+            "node": "check-first · Not seen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check-first · Not seen": {
+      "main": [
+        [
+          {
+            "node": "check-first · Claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check-first · Claim": {
+      "main": [
+        [
+          {
+            "node": "check-first · Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "guarded · Webhook": {
+      "main": [
+        [
+          {
+            "node": "guarded · Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "guarded · Items": {
+      "main": [
+        [
+          {
+            "node": "guarded · Guarded call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "guarded · Guarded call": {
+      "main": [
+        [
+          {
+            "node": "guarded · Held?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "guarded · Held?": {
+      "main": [
+        [
+          {
+            "node": "guarded · Needs review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "guarded · Finished",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "guarded-retry-on-fail · Webhook": {
+      "main": [
+        [
+          {
+            "node": "guarded-retry-on-fail · Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "guarded-retry-on-fail · Items": {
+      "main": [
+        [
+          {
+            "node": "guarded-retry-on-fail · Guarded call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "guarded-retry-on-fail · Guarded call": {
+      "main": [
+        [
+          {
+            "node": "guarded-retry-on-fail · Held?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "guarded-retry-on-fail · Held?": {
+      "main": [
+        [
+          {
+            "node": "guarded-retry-on-fail · Needs review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "guarded-retry-on-fail · Finished",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "retryFxLab000001"
+}

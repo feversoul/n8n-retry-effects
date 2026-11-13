@@ -1,0 +1,149 @@
+{
+  "name": "Retry Effects · 8 Lab child (no guard)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Retry Effects · Lab child\nCalled by the `sub` case of the lab. **Before** completes, then **Send** makes one call per item. Nothing guards it.",
+        "width": 560,
+        "height": 140,
+        "color": 4
+      },
+      "id": "7ce7345b-34a9-46a5-88b2-adc62748d83f",
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "36b47c52-858d-4fbe-824c-e46ecc4d68c5",
+      "name": "When called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://standin:8080/mark",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Execution-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ run: $json.key.slice(0, $json.key.lastIndexOf(':')) }) }}",
+        "options": {}
+      },
+      "id": "9acaec0e-760b-46ea-806e-914b24beb0ae",
+      "name": "Before",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return $('When called').all();"
+      },
+      "id": "bc1eee55-9a7a-4965-8bff-3b3b9d9c307c",
+      "name": "Items again",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://standin:8080/charge",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.key }}"
+            },
+            {
+              "name": "X-Execution-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ key: $json.key }) }}",
+        "options": {
+          "timeout": 1500
+        }
+      },
+      "id": "10983bb4-d144-4d1f-8a3a-40ae7619670b",
+      "name": "Send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When called": {
+      "main": [
+        [
+          {
+            "node": "Before",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Before": {
+      "main": [
+        [
+          {
+            "node": "Items again",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Items again": {
+      "main": [
+        [
+          {
+            "node": "Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "retryFxLabChild1"
+}

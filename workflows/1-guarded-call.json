@@ -1,0 +1,1305 @@
+{
+  "name": "Retry Effects · 1 Guarded call",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Retry Effects · Guarded call\nA sub-workflow that makes one outside call at most once per `key`, however often the execution is retried.\n\nCall it from an **Execute Sub-workflow** node set to **Run once for each item**. Each item needs a `key` that is the same on every attempt (order id + line, event id + recipient). Do not build it from `$execution.id`: a retry gets a new execution id.\n\n**Why a sub-workflow:** when a retry starts at a failed node, the nodes before it do not run again, so a check placed in front of the call is skipped. A failed Execute Sub-workflow node runs the whole sub-workflow again, check included.\n\nIt answers with `outcome`: `sent`, `already_done`, `found_at_service`, `held`, or `busy` (another run took this key at the same moment).\n\nReplace **Call the service** with your own node and keep its **On Error** on *Continue (using error output)*. Replace **Look it up** too, or stay on `hold`. Settings are at the top of **Entry**.",
+        "width": 640,
+        "height": 480,
+        "color": 4
+      },
+      "id": "907b0374-1445-4da6-83f1-a95f12cd89bf",
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -620
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### The ledger row\n- `sending`: a run is in the middle of the call. Another run that meets it answers `busy`. After `LEASE_SECONDS` it counts as a run that died, and is treated as `unknown`.\n- `done`: the service answered. Later runs answer `already_done` and do not call.\n- `unknown`: the call failed or timed out. Nobody knows if the service did the work.\n\n### What happens to `unknown`\n- `hold` (default): do not call. The item comes back with `outcome: held` for a person to check. To release it, set the row to `done`, or delete it to send again.\n- `lookup`: ask the service with **Look it up**. Found: mark done, no call. A clear \"not there\": call again. Any other answer: hold.\n\nUse `lookup` only when the service shows a write the moment it happens. A lookup that lags will say \"not there\" about something that is.",
+        "width": 640,
+        "height": 420,
+        "color": 5
+      },
+      "id": "33c51962-c7fb-43a6-8924-73f9a923e75e",
+      "name": "Unknown",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        900,
+        -620
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "f2953808-5d5f-4de6-8b31-2730579780cf",
+      "name": "When called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Settings.\nconst ON_UNKNOWN = 'hold'; // 'hold' or 'lookup', see the note. An item can override it with on_unknown.\nconst LEASE_SECONDS = 300; // a row still \"sending\" after this long counts as a run that died. Set it longer than your slowest call.\n\nconst input = $input.first().json;\nconst key = String(input.key ?? '').trim();\nif (!key) throw new Error('Guarded call needs a key on the item');\nconst hex = () => Math.floor(Math.random() * 0x100000000).toString(16).padStart(8, '0');\n// token: this run. It tells my ledger rows from those of a run that started at the same moment.\nreturn [{ json: { key, payload: input.payload ?? {}, on_unknown: input.on_unknown ?? ON_UNKNOWN, lease_seconds: LEASE_SECONDS, token: `${$execution.id}-${hex()}${hex()}` } }];"
+      },
+      "id": "a85c5d70-207c-46de-8c07-e8bc58fde490",
+      "name": "Entry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "retry_ledger"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "key",
+              "condition": "eq",
+              "keyValue": "={{ $json.key }}"
+            }
+          ]
+        },
+        "returnAll": false,
+        "limit": 1,
+        "orderBy": true,
+        "orderByColumn": "id",
+        "orderByDirection": "ASC"
+      },
+      "id": "7e1830c7-47d3-4806-8edf-fb9686c72f2e",
+      "name": "Ledger row",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        0
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5b61e347-023d-4895-80ac-9a0573c966bd",
+              "leftValue": "={{ $json.id === undefined }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "7f3333a7-7bf8-4b2d-8bf7-47398283c12f",
+      "name": "New key?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "retry_ledger"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "key": "={{ $('Entry').first().json.key }}",
+            "status": "sending",
+            "attempts": 1,
+            "claimed_by": "={{ $('Entry').first().json.token }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "key",
+              "displayName": "key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "attempts",
+              "displayName": "attempts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "claimed_by",
+              "displayName": "claimed_by",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "c5fc6c54-6f0a-473f-8f1a-b03fdde43329",
+      "name": "Claim",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "retry_ledger"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "key",
+              "condition": "eq",
+              "keyValue": "={{ $('Entry').first().json.key }}"
+            }
+          ]
+        },
+        "returnAll": false,
+        "limit": 1,
+        "orderBy": true,
+        "orderByColumn": "id",
+        "orderByDirection": "ASC"
+      },
+      "id": "d30f8427-d578-4195-8842-4341d7958e25",
+      "name": "First row",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        -120
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0b4ff715-e2bc-4ba1-8ed0-5967de25640e",
+              "leftValue": "={{ $json.id === $('Claim').first().json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "87206082-4faa-4027-8b5c-1be7df820985",
+      "name": "Mine?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1340,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "deleteRows",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "retry_ledger"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Claim').first().json.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "69db4566-9960-4294-85ed-1fc29a8054c7",
+      "name": "Remove my row",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1560,
+        -280
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://standin:8080/charge",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Entry').first().json.key }}"
+            },
+            {
+              "name": "X-Execution-Id",
+              "value": "={{ $execution.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ key: $('Entry').first().json.key }) }}",
+        "options": {
+          "timeout": 1500
+        }
+      },
+      "id": "f15b5363-11dc-4063-8619-e4236a5c4460",
+      "name": "Call the service",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2440,
+        -120
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "retry_ledger"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "key",
+              "condition": "eq",
+              "keyValue": "={{ $('Entry').first().json.key }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "unknown"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "c5385cc8-0ab9-44be-815b-a4b26d470260",
+      "name": "Mark unknown",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2660,
+        40
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ 'The call for ' + $('Entry').first().json.key + ' failed: ' + JSON.stringify($('Call the service').first().json.error ?? 'no details') }}"
+      },
+      "id": "5ae20bad-1c6f-40e5-8a8e-abd267225651",
+      "name": "Fail the run",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2880,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "retry_ledger"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "key",
+              "condition": "eq",
+              "keyValue": "={{ $('Entry').first().json.key }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "done"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "fff83b45-a6de-49fa-8db7-0432d613ce32",
+      "name": "Mark done",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2660,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { key: $('Entry').first().json.key, outcome: 'sent' } }];"
+      },
+      "id": "0dd0e319-8971-48e1-81dd-dd4ee3f21c4a",
+      "name": "Sent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2880,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "009f86b6-276d-4d7e-8682-61c3f33aeb47",
+              "leftValue": "={{ $json.status === 'done' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "7c9deb8f-48fb-46b3-8b3e-409465a081b3",
+      "name": "Done already?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        900,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { key: $('Entry').first().json.key, outcome: 'already_done' } }];"
+      },
+      "id": "bd9a633b-47bd-4b7b-866f-8b6c3d55c560",
+      "name": "Already done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "520c419c-7e60-47a3-87a0-8cbce037cd79",
+              "leftValue": "={{ $json.status === 'sending' && Date.now() - new Date($json.updatedAt).getTime() < $('Entry').first().json.lease_seconds * 1000 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "5638ee76-9f8b-4943-8b72-0e1f20461ffd",
+      "name": "In flight?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9a552b3f-9149-45e2-8e18-2449ed5093a9",
+              "leftValue": "={{ $('Entry').first().json.on_unknown === 'lookup' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "b29064cc-7bf6-4c53-8ded-9922b71d7861",
+      "name": "Look it up?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1340,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://standin:8080/lookup",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $('Entry').first().json.key }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 5000
+        }
+      },
+      "id": "7843cd88-4192-4d92-83c0-aee766fb81cf",
+      "name": "Look it up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        400
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1cdf289f-5a7c-41b4-8f91-90e95535d408",
+              "leftValue": "={{ $json.statusCode === 200 && $json.body?.found === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "ee633b2e-f425-4f36-84e2-f24c7a5055ad",
+      "name": "Found there?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1780,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "retry_ledger"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "key",
+              "condition": "eq",
+              "keyValue": "={{ $('Entry').first().json.key }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "done"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "b8cbe65d-9469-4ecc-8718-efbbb68d902e",
+      "name": "Mark done (found)",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2000,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { key: $('Entry').first().json.key, outcome: 'found_at_service' } }];"
+      },
+      "id": "e743172f-33e7-479a-8e27-7bba3859a9c9",
+      "name": "Found at service",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2220,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1d6e8c9c-b0ec-4713-84ef-23a23db6604e",
+              "leftValue": "={{ $json.statusCode === 200 && $json.body?.found === false }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "f6428a4b-d65a-4140-8235-1c295c71ff53",
+      "name": "Clearly not there?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2000,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "retry_ledger"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "key": "={{ $('Entry').first().json.key + '#attempt' + (($('Ledger row').first().json.attempts ?? 1) + 1) }}",
+            "status": "lock",
+            "attempts": 0,
+            "claimed_by": "={{ $('Entry').first().json.token }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "key",
+              "displayName": "key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "attempts",
+              "displayName": "attempts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "claimed_by",
+              "displayName": "claimed_by",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "5f44fd3e-5e98-4774-874f-8a2238a083d1",
+      "name": "Claim the resend",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2220,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "retry_ledger"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "key",
+              "condition": "eq",
+              "keyValue": "={{ $('Entry').first().json.key + '#attempt' + (($('Ledger row').first().json.attempts ?? 1) + 1) }}"
+            }
+          ]
+        },
+        "returnAll": false,
+        "limit": 1,
+        "orderBy": true,
+        "orderByColumn": "id",
+        "orderByDirection": "ASC"
+      },
+      "id": "5a35c1c6-59e3-4985-845b-1eebf68572a8",
+      "name": "First resend row",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2440,
+        500
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b186aae8-d23c-43c8-8f25-1b1da40c7399",
+              "leftValue": "={{ $json.id === $('Claim the resend').first().json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "b5f2bc6d-5b5d-4ec4-8d40-e85a5a96a625",
+      "name": "Resend mine?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2660,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "retry_ledger"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "key",
+              "condition": "eq",
+              "keyValue": "={{ $('Entry').first().json.key }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "sending",
+            "attempts": "={{ ($('Ledger row').first().json.attempts ?? 1) + 1 }}",
+            "claimed_by": "={{ $('Entry').first().json.token }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "attempts",
+              "displayName": "attempts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "claimed_by",
+              "displayName": "claimed_by",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "527dbe0c-a3c6-4573-8b4a-251046fe0e4d",
+      "name": "Count attempt",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2880,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { key: $('Entry').first().json.key, outcome: 'held' } }];"
+      },
+      "id": "10a4d1ee-a5e0-41aa-830f-57339428a828",
+      "name": "Held",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { key: $('Entry').first().json.key, outcome: 'busy' } }];"
+      },
+      "id": "f19da0d2-430f-4cd5-8d71-17622038a474",
+      "name": "Busy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2880,
+        640
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When called": {
+      "main": [
+        [
+          {
+            "node": "Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Entry": {
+      "main": [
+        [
+          {
+            "node": "Ledger row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ledger row": {
+      "main": [
+        [
+          {
+            "node": "New key?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New key?": {
+      "main": [
+        [
+          {
+            "node": "Claim",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Done already?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim": {
+      "main": [
+        [
+          {
+            "node": "First row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "First row": {
+      "main": [
+        [
+          {
+            "node": "Mine?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mine?": {
+      "main": [
+        [
+          {
+            "node": "Call the service",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Remove my row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove my row": {
+      "main": [
+        [
+          {
+            "node": "Busy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call the service": {
+      "main": [
+        [
+          {
+            "node": "Mark done",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark unknown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark done": {
+      "main": [
+        [
+          {
+            "node": "Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark unknown": {
+      "main": [
+        [
+          {
+            "node": "Fail the run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Done already?": {
+      "main": [
+        [
+          {
+            "node": "Already done",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "In flight?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "In flight?": {
+      "main": [
+        [
+          {
+            "node": "Busy",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Look it up?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Look it up?": {
+      "main": [
+        [
+          {
+            "node": "Look it up",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Held",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Look it up": {
+      "main": [
+        [
+          {
+            "node": "Found there?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Found there?": {
+      "main": [
+        [
+          {
+            "node": "Mark done (found)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clearly not there?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark done (found)": {
+      "main": [
+        [
+          {
+            "node": "Found at service",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clearly not there?": {
+      "main": [
+        [
+          {
+            "node": "Claim the resend",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Held",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim the resend": {
+      "main": [
+        [
+          {
+            "node": "First resend row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "First resend row": {
+      "main": [
+        [
+          {
+            "node": "Resend mine?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resend mine?": {
+      "main": [
+        [
+          {
+            "node": "Count attempt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Busy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Count attempt": {
+      "main": [
+        [
+          {
+            "node": "Call the service",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "retryFxGuard0001"
+}
