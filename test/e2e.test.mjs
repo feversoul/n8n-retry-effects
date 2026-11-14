@@ -131,9 +131,12 @@ async function retryByEditor(id, loadWorkflow) {
   return finished(response.body.data.id);
 }
 
+// While n8n starts, every path answers 200 with a "starting up" page.
+const answered = async (response) => response.status === 200 && !(await response.text()).startsWith('n8n is starting up');
+
 before(async () => {
   // bootstrap.sh has finished when the setup webhook answers.
-  await until(async () => (await fetch(`${BASE}/webhook/retryfx/setup`, { method: 'POST' })).status === 200, 240_000);
+  await until(async () => answered(await fetch(`${BASE}/webhook/retryfx/setup`, { method: 'POST' })), 240_000);
 
   // Owner and API key through n8n's own endpoints, the ones the first-run
   // screen and Settings > n8n API use.
